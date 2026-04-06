@@ -1,0 +1,62 @@
+{
+  "entity": {
+    "sensor": {
+      "appliance_state": {
+        "default": "mdi:washing-machine"
+      },
+      "cycle_name": {
+        "default": "mdi:rotate-3d-variant"
+      },
+      "current_phase": {
+        "default": "mdi:progress-wrench"
+      },
+      "time_remaining": {
+        "default": "mdi:timer-outline"
+      },
+      "estimated_completion": {
+        "default": "mdi:clock-check-outline"
+      },
+      "system_version": {
+        "default": "mdi:chip"
+      }
+    },
+    "binary_sensor": {
+      "door": {
+        "default": "mdi:door-closed",
+        "state": {
+          "on": "mdi:door-open"
+        }
+      },
+      "door_lock": {
+        "default": "mdi:lock-open-variant",
+        "state": {
+          "on": "mdi:lock"
+        }
+      },
+      "remote_start": {
+        "default": "mdi:remote-off",
+        "state": {
+          "on": "mdi:remote"
+        }
+      },
+      "fault_active": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      },
+      "clean_washer": {
+        "default": "mdi:washing-machine",
+        "state": {
+          "on": "mdi:washing-machine-alert"
+        }
+      },
+      "control_lock": {
+        "default": "mdi:lock-open-variant",
+        "state": {
+          "on": "mdi:lock"
+        }
+      }
+    }
+  }
+}

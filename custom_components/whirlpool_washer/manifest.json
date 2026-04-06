@@ -1,0 +1,12 @@
+{
+  "domain": "whirlpool_washer",
+  "name": "Whirlpool Washer",
+  "version": "0.0.1",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/",
+  "integration_type": "device",
+  "iot_class": "cloud_push",
+  "loggers": ["whirlpool_washer"],
+  "requirements": ["boto3>=1.34.0", "awsiotsdk>=1.0.0"]
+}

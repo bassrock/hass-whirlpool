@@ -1,0 +1,71 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Whirlpool Account",
+        "description": "Enter your Whirlpool app credentials.",
+        "data": {
+          "username": "Email",
+          "password": "Password"
+        }
+      },
+      "device": {
+        "title": "Select Appliance",
+        "description": "Multiple appliances found. Select the one to add.",
+        "data": {
+          "said": "Appliance"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to Whirlpool API",
+      "invalid_auth": "Invalid email or password",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This appliance is already configured"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "appliance_state": {
+        "name": "State"
+      },
+      "cycle_name": {
+        "name": "Cycle"
+      },
+      "current_phase": {
+        "name": "Phase"
+      },
+      "time_remaining": {
+        "name": "Time remaining"
+      },
+      "estimated_completion": {
+        "name": "Estimated completion"
+      },
+      "system_version": {
+        "name": "Firmware"
+      }
+    },
+    "binary_sensor": {
+      "door": {
+        "name": "Door"
+      },
+      "door_lock": {
+        "name": "Door lock"
+      },
+      "remote_start": {
+        "name": "Remote start"
+      },
+      "fault_active": {
+        "name": "Fault"
+      },
+      "clean_washer": {
+        "name": "Clean washer reminder"
+      },
+      "control_lock": {
+        "name": "Control lock"
+      }
+    }
+  }
+}
