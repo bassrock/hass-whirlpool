@@ -17,8 +17,25 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 
+from .const import LOGGER
 from .coordinator import WhirlpoolConfigEntry, WhirlpoolDataUpdateCoordinator
 from .entity import WhirlpoolEntity
+
+# Known appliance states from the cloud API. The list isn't exhaustive — the
+# washer can report additional values (e.g. "programming" while the user is
+# selecting a cycle at the HMI), so _appliance_state filters unknowns to None
+# instead of crashing the ENUM sensor.
+APPLIANCE_STATE_OPTIONS = [
+    "running",
+    "idle",
+    "complete",
+    "standby",
+    "pause",
+    "delayed",
+    "programming",
+    "fault",
+    "off",
+]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -37,20 +54,26 @@ def _get_nested(data: dict, *keys, default=None):
     return data
 
 
+def _appliance_state(data: dict) -> StateType:
+    """Map cloud applianceState to our enum, dropping unknown values to None."""
+    value = _get_nested(data, "washer", "applianceState")
+    if value is None or value in APPLIANCE_STATE_OPTIONS:
+        return value
+    LOGGER.warning(
+        "Unknown applianceState %r — exposing as unknown. Add it to "
+        "APPLIANCE_STATE_OPTIONS if it should be a valid state.",
+        value,
+    )
+    return None
+
+
 SENSORS: tuple[WhirlpoolSensorEntityDescription, ...] = (
     WhirlpoolSensorEntityDescription(
         key="appliance_state",
         translation_key="appliance_state",
         device_class=SensorDeviceClass.ENUM,
-        options=[
-            "running",
-            "idle",
-            "complete",
-            "standby",
-            "pause",
-            "delayed",
-        ],
-        value_fn=lambda data: _get_nested(data, "washer", "applianceState"),
+        options=APPLIANCE_STATE_OPTIONS,
+        value_fn=_appliance_state,
     ),
     WhirlpoolSensorEntityDescription(
         key="cycle_name",
