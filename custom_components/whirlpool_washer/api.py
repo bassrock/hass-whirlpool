@@ -412,8 +412,16 @@ class WhirlpoolMqttClient:
         self._connected = False
 
     def _on_connection_resumed(self, connection, return_code, session_present, **kwargs):
-        _LOGGER.info("AWS IoT MQTT connection resumed (rc=%s)", return_code)
-        self._connected = True
+        _LOGGER.info(
+            "AWS IoT MQTT connection resumed (rc=%s, session_present=%s)",
+            return_code,
+            session_present,
+        )
+        # With clean_session=True the broker drops subscriptions, so an
+        # auto-resume without session_present leaves us silently subscribed
+        # to nothing. Stay "disconnected" so the heartbeat triggers a full
+        # reconnect-and-resubscribe via _async_open_mqtt.
+        self._connected = bool(session_present)
 
 
 # ---------------------------------------------------------------------------
@@ -434,6 +442,7 @@ class WhirlpoolApiClient:
         self.said = said
         self.model = model
         self._mqtt: WhirlpoolMqttClient | None = None
+        self._on_message: Callable[[str, dict], None] | None = None
 
         # Auth state
         self._access_token: str = ""
@@ -495,6 +504,7 @@ class WhirlpoolApiClient:
     ) -> None:
         """Check and refresh credentials if needed."""
         now = time.time()
+        creds_rotated = False
 
         # Check OAuth token expiry (6h)
         if now >= self._token_expiry - CREDENTIAL_REFRESH_BUFFER:
@@ -523,16 +533,11 @@ class WhirlpoolApiClient:
             self._aws_creds = await self._auth.async_get_aws_credentials(
                 loop, self._identity_id, self._cognito_token
             )
-            # Reconnect MQTT with new credentials
-            if self._mqtt is not None:
-                _LOGGER.info("Reconnecting MQTT with refreshed credentials")
-                await self._mqtt.async_disconnect(loop)
-                await self._mqtt.async_connect(
-                    loop, self._aws_creds, self._identity_id
-                )
-                await self._mqtt.async_subscribe_appliance(
-                    loop, self.model, self.said
-                )
+            creds_rotated = True
+
+        if creds_rotated and self._mqtt is not None:
+            _LOGGER.info("Reconnecting MQTT with refreshed AWS credentials")
+            await self._async_open_mqtt(loop)
 
     async def async_connect_and_subscribe(
         self,
@@ -540,10 +545,32 @@ class WhirlpoolApiClient:
         on_message: Callable[[str, dict], None],
     ) -> None:
         """Connect MQTT and subscribe for the configured appliance."""
+        self._on_message = on_message
+        await self._async_open_mqtt(loop)
+
+    async def async_ensure_connected(
+        self, loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Reconnect MQTT from scratch if it isn't currently connected."""
+        if self._mqtt is not None and self._mqtt.is_connected:
+            return
+        _LOGGER.info("MQTT not connected, performing full reconnect")
+        await self._async_open_mqtt(loop)
+
+    async def _async_open_mqtt(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Tear down any existing MQTT client and open a fresh subscribed one."""
         if self._aws_creds is None:
             raise WhirlpoolApiError("Not authenticated")
+        if self._on_message is None:
+            raise WhirlpoolApiError("No message handler registered")
 
-        self._mqtt = WhirlpoolMqttClient(on_message)
+        if self._mqtt is not None:
+            try:
+                await self._mqtt.async_disconnect(loop)
+            except Exception as err:  # noqa: BLE001 - teardown is best-effort
+                _LOGGER.debug("Ignoring error during MQTT teardown: %s", err)
+
+        self._mqtt = WhirlpoolMqttClient(self._on_message)
         await self._mqtt.async_connect(loop, self._aws_creds, self._identity_id)
         await self._mqtt.async_subscribe_appliance(loop, self.model, self.said)
 
@@ -552,8 +579,7 @@ class WhirlpoolApiClient:
     ) -> None:
         """Publish a getState command."""
         if self._mqtt is None or not self._mqtt.is_connected:
-            _LOGGER.debug("Cannot request state: MQTT not connected")
-            return
+            raise WhirlpoolConnectionError("MQTT not connected")
         await self._mqtt.async_publish_get_state(loop, self.model, self.said)
 
     async def async_disconnect(

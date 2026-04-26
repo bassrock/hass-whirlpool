@@ -52,7 +52,13 @@ class WhirlpoolDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.said = config_entry.data[CONF_SAID]
         self.model = config_entry.data[CONF_MODEL]
         self._current_state: dict[str, Any] = {}
+        self._appliance_online: bool = True
         self._thing_info = None
+
+    @property
+    def appliance_online(self) -> bool:
+        """Whether the appliance itself is reachable (per AWS IoT presence)."""
+        return self._appliance_online
 
     async def async_setup(self) -> None:
         """Connect MQTT and subscribe for state updates."""
@@ -79,10 +85,11 @@ class WhirlpoolDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.api.async_disconnect(loop)
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Heartbeat: ensure credentials valid and request fresh state."""
+        """Heartbeat: ensure credentials + MQTT are healthy, then poll state."""
         loop = asyncio.get_event_loop()
         try:
             await self.api.async_ensure_credentials_valid(loop)
+            await self.api.async_ensure_connected(loop)
             await self.api.async_request_state(loop)
         except WhirlpoolAuthError as err:
             raise ConfigEntryAuthFailed("Authentication failed") from err
@@ -92,21 +99,47 @@ class WhirlpoolDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def _handle_mqtt_message(self, topic: str, data: dict) -> None:
         """Handle incoming MQTT messages (called from awscrt thread)."""
-        # Presence events
-        if "$aws/events/presence/" in topic:
-            event = "connected" if "connected/" in topic else "disconnected"
-            LOGGER.debug("Appliance %s: %s", self.said, event)
+        if "$aws/events/presence/connected/" in topic:
+            self.hass.loop.call_soon_threadsafe(self._handle_presence_connected)
+            return
+        if "$aws/events/presence/disconnected/" in topic:
+            self.hass.loop.call_soon_threadsafe(self._handle_presence_disconnected)
             return
 
         # State response or update — extract payload
         payload = data.get("payload", data)
+        if isinstance(payload, dict) and "washer" in payload:
+            self.hass.loop.call_soon_threadsafe(self._handle_state_update, payload)
 
-        if "washer" in payload:
-            self._current_state = payload
-            # Dispatch to HA event loop
-            self.hass.loop.call_soon_threadsafe(
-                self.async_set_updated_data, payload
-            )
+    def _handle_state_update(self, payload: dict[str, Any]) -> None:
+        """Apply a state push on the HA event loop."""
+        self._current_state = payload
+        # Receiving state proves the appliance is online, even if we never
+        # saw the matching presence/connected event (e.g. on HA startup).
+        if not self._appliance_online:
+            LOGGER.info("Appliance %s back online (state received)", self.said)
+            self._appliance_online = True
+        self.async_set_updated_data(payload)
+
+    def _handle_presence_connected(self) -> None:
+        """Mark appliance online and pull a fresh state snapshot."""
+        LOGGER.info("Appliance %s presence: connected", self.said)
+        self._appliance_online = True
+        self.async_update_listeners()
+        self.hass.async_create_task(self._async_request_state_safe())
+
+    def _handle_presence_disconnected(self) -> None:
+        """Mark appliance offline so entities go unavailable."""
+        LOGGER.info("Appliance %s presence: disconnected", self.said)
+        self._appliance_online = False
+        self.async_update_listeners()
+
+    async def _async_request_state_safe(self) -> None:
+        """Best-effort getState; log but don't crash if it fails."""
+        try:
+            await self.api.async_request_state(asyncio.get_event_loop())
+        except Exception as err:  # noqa: BLE001 - best-effort refresh
+            LOGGER.debug("getState after presence event failed: %s", err)
 
     @property
     def device_info(self) -> DeviceInfo:

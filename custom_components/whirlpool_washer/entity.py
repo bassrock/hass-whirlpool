@@ -26,3 +26,8 @@ class WhirlpoolEntity(CoordinatorEntity[WhirlpoolDataUpdateCoordinator]):
     def device_info(self) -> DeviceInfo:
         """Return device information."""
         return self.coordinator.device_info
+
+    @property
+    def available(self) -> bool:
+        """Available only when the heartbeat is healthy AND the appliance is reachable."""
+        return super().available and self.coordinator.appliance_online

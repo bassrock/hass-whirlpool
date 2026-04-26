@@ -18,7 +18,7 @@ AWS_REGION = "us-east-2"
 IOT_ENDPOINT = "wt.applianceconnect.net"
 
 # Timing
-POLL_INTERVAL = 300  # 5 minutes heartbeat for getState
+POLL_INTERVAL = 120  # 2 minutes heartbeat — also caps MQTT reconnect latency
 MQTT_KEEPALIVE = 30
 CONNECTION_TIMEOUT = 15.0
 CREDENTIAL_REFRESH_BUFFER = 300  # Refresh AWS creds 5 min before expiry
