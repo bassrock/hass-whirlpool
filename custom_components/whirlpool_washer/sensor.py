@@ -67,6 +67,23 @@ def _appliance_state(data: dict) -> StateType:
     return None
 
 
+# cycleTime.timeComplete keeps the previous run's epoch even after the cycle
+# finishes, so we only expose it while a cycle is actually in flight.
+_ACTIVE_CYCLE_STATES = {"running", "paused"}
+
+
+def _estimated_completion(data: dict) -> datetime | None:
+    cycle_time = _get_nested(data, "washer", "cycleTime", default={})
+    if not isinstance(cycle_time, dict):
+        return None
+    if cycle_time.get("state") not in _ACTIVE_CYCLE_STATES:
+        return None
+    ts = cycle_time.get("timeComplete", 0)
+    if not ts:
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
 SENSORS: tuple[WhirlpoolSensorEntityDescription, ...] = (
     WhirlpoolSensorEntityDescription(
         key="appliance_state",
@@ -100,11 +117,7 @@ SENSORS: tuple[WhirlpoolSensorEntityDescription, ...] = (
         key="estimated_completion",
         translation_key="estimated_completion",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda data: (
-            datetime.fromtimestamp(ts, tz=timezone.utc)
-            if (ts := _get_nested(data, "washer", "cycleTime", "timeComplete", default=0))
-            else None
-        ),
+        value_fn=_estimated_completion,
     ),
     WhirlpoolSensorEntityDescription(
         key="system_version",

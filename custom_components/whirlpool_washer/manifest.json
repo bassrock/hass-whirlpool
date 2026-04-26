@@ -1,7 +1,7 @@
 {
   "domain": "whirlpool_washer",
   "name": "Whirlpool Washer",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/",
