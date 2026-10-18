@@ -66,6 +66,17 @@
       "control_lock": {
         "name": "Control lock"
       }
+    },
+    "button": {
+      "pause_cycle": {
+        "name": "Pause cycle"
+      },
+      "resume_cycle": {
+        "name": "Resume cycle"
+      },
+      "cancel_cycle": {
+        "name": "Cancel cycle"
+      }
     }
   }
 }

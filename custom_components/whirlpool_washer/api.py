@@ -21,6 +21,7 @@ from .const import (
     CONNECTION_TIMEOUT,
     CREDENTIAL_REFRESH_BUFFER,
     IOT_ENDPOINT,
+    COMMAND_RESPONSE_TIMEOUT,
     MQTT_KEEPALIVE,
 )
 
@@ -42,6 +43,10 @@ class WhirlpoolApiError(Exception):
 
 class WhirlpoolConnectionError(WhirlpoolApiError):
     """MQTT connection error."""
+
+
+class WhirlpoolCommandError(WhirlpoolApiError):
+    """The appliance rejected a command or never answered it."""
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +366,50 @@ class WhirlpoolMqttClient:
                 None, lambda f=sub_future: f.result(timeout=CONNECTION_TIMEOUT)
             )
 
+    async def async_publish_command(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        model: str,
+        said: str,
+        command: str,
+        payload_extra: dict[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> str:
+        """Publish a command and return its requestId.
+
+        The envelope matches the Android app: payload defaults to
+        addressee "appliance"; payload_extra can override the addressee to
+        target a cavity (e.g. "washer") or add command arguments.
+        """
+        from awscrt import mqtt
+
+        if not self._connection or not self._connected:
+            raise WhirlpoolConnectionError("Not connected to MQTT")
+
+        request_id = request_id or str(uuid.uuid4())
+        request_topic = f"cmd/{model}/{said}/request/{self._client_id}"
+        message: dict[str, Any] = {
+            "requestId": request_id,
+            "timestamp": int(time.time() * 1000),
+            "payload": {
+                "addressee": "appliance",
+                "command": command,
+            },
+        }
+        if payload_extra:
+            message["payload"].update(payload_extra)
+
+        pub_future, _ = self._connection.publish(
+            topic=request_topic,
+            payload=json.dumps(message),
+            qos=mqtt.QoS.AT_LEAST_ONCE,
+        )
+        await loop.run_in_executor(
+            None, lambda: pub_future.result(timeout=CONNECTION_TIMEOUT)
+        )
+        _LOGGER.debug("Published %s to %s: %s", command, request_topic, message)
+        return request_id
+
     async def async_publish_get_state(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -368,30 +417,7 @@ class WhirlpoolMqttClient:
         said: str,
     ) -> None:
         """Publish a getState command."""
-        from awscrt import mqtt
-
-        if not self._connection or not self._connected:
-            raise WhirlpoolConnectionError("Not connected to MQTT")
-
-        request_topic = f"cmd/{model}/{said}/request/{self._client_id}"
-        payload = json.dumps({
-            "requestId": str(uuid.uuid4()),
-            "timestamp": int(time.time() * 1000),
-            "payload": {
-                "addressee": "appliance",
-                "command": "getState",
-            },
-        })
-
-        pub_future, _ = self._connection.publish(
-            topic=request_topic,
-            payload=payload,
-            qos=mqtt.QoS.AT_LEAST_ONCE,
-        )
-        await loop.run_in_executor(
-            None, lambda: pub_future.result(timeout=CONNECTION_TIMEOUT)
-        )
-        _LOGGER.debug("Published getState to %s", request_topic)
+        await self.async_publish_command(loop, model, said, "getState")
 
     def _make_callback(self, subscribed_topic: str):
         """Create a per-topic MQTT message callback."""
@@ -443,6 +469,8 @@ class WhirlpoolApiClient:
         self.model = model
         self._mqtt: WhirlpoolMqttClient | None = None
         self._on_message: Callable[[str, dict], None] | None = None
+        # requestId -> future awaiting that command's response
+        self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
 
         # Auth state
         self._access_token: str = ""
@@ -570,9 +598,27 @@ class WhirlpoolApiClient:
             except Exception as err:  # noqa: BLE001 - teardown is best-effort
                 _LOGGER.debug("Ignoring error during MQTT teardown: %s", err)
 
-        self._mqtt = WhirlpoolMqttClient(self._on_message)
+        self._mqtt = WhirlpoolMqttClient(self._make_dispatcher(loop))
         await self._mqtt.async_connect(loop, self._aws_creds, self._identity_id)
         await self._mqtt.async_subscribe_appliance(loop, self.model, self.said)
+
+    def _make_dispatcher(
+        self, loop: asyncio.AbstractEventLoop
+    ) -> Callable[[str, dict], None]:
+        """Resolve pending command futures, then hand every message on."""
+
+        def dispatch(topic: str, data: dict) -> None:
+            # Called from the awscrt thread.
+            request_id = data.get("requestId")
+            if "/response/" in topic and request_id in self._pending:
+                future = self._pending[request_id]
+                loop.call_soon_threadsafe(
+                    lambda: future.done() or future.set_result(data)
+                )
+            if self._on_message is not None:
+                self._on_message(topic, data)
+
+        return dispatch
 
     async def async_request_state(
         self, loop: asyncio.AbstractEventLoop
@@ -581,6 +627,43 @@ class WhirlpoolApiClient:
         if self._mqtt is None or not self._mqtt.is_connected:
             raise WhirlpoolConnectionError("MQTT not connected")
         await self._mqtt.async_publish_get_state(loop, self.model, self.said)
+
+    async def async_send_command(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        command: str,
+        payload_extra: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Send a command and wait for the appliance to accept it.
+
+        Raises WhirlpoolCommandError if the response isn't "accepted" or
+        nothing comes back in time.
+        """
+        if self._mqtt is None or not self._mqtt.is_connected:
+            raise WhirlpoolConnectionError("MQTT not connected")
+
+        request_id = str(uuid.uuid4())
+        future: asyncio.Future[dict[str, Any]] = loop.create_future()
+        self._pending[request_id] = future
+        try:
+            await self._mqtt.async_publish_command(
+                loop, self.model, self.said, command, payload_extra, request_id
+            )
+            try:
+                response = await asyncio.wait_for(
+                    future, timeout=COMMAND_RESPONSE_TIMEOUT
+                )
+            except TimeoutError as err:
+                raise WhirlpoolCommandError(
+                    f"No response to {command} within {COMMAND_RESPONSE_TIMEOUT:.0f}s"
+                ) from err
+        finally:
+            self._pending.pop(request_id, None)
+
+        _LOGGER.debug("Response to %s: %s", command, response)
+        if response.get("response") != "accepted":
+            raise WhirlpoolCommandError(f"{command} was not accepted: {response}")
+        return response
 
     async def async_disconnect(
         self, loop: asyncio.AbstractEventLoop

@@ -8,7 +8,7 @@ from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -133,6 +133,21 @@ class WhirlpoolDataUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         LOGGER.info("Appliance %s presence: disconnected", self.said)
         self._appliance_online = False
         self.async_update_listeners()
+
+    async def async_send_command(
+        self, command: str, payload_extra: dict[str, Any] | None = None
+    ) -> None:
+        """Send a command, surface failures to the caller, then refresh state."""
+        loop = asyncio.get_event_loop()
+        try:
+            await self.api.async_ensure_credentials_valid(loop)
+            await self.api.async_ensure_connected(loop)
+            await self.api.async_send_command(loop, command, payload_extra)
+        except WhirlpoolAuthError as err:
+            raise HomeAssistantError(f"Whirlpool authentication failed: {err}") from err
+        except WhirlpoolApiError as err:
+            raise HomeAssistantError(str(err)) from err
+        await self._async_request_state_safe()
 
     async def _async_request_state_safe(self) -> None:
         """Best-effort getState; log but don't crash if it fails."""

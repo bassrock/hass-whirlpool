@@ -13,7 +13,7 @@ from .api import WhirlpoolApiClient, WhirlpoolApiError, WhirlpoolAuthClient, Whi
 from .const import CONF_MODEL, CONF_REFRESH_TOKEN, CONF_SAID, LOGGER
 from .coordinator import WhirlpoolConfigEntry, WhirlpoolDataUpdateCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.BUTTON, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: WhirlpoolConfigEntry) -> bool:

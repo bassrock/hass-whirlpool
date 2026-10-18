@@ -57,6 +57,17 @@
           "on": "mdi:lock"
         }
       }
+    },
+    "button": {
+      "pause_cycle": {
+        "default": "mdi:pause-circle-outline"
+      },
+      "resume_cycle": {
+        "default": "mdi:play-circle-outline"
+      },
+      "cancel_cycle": {
+        "default": "mdi:stop-circle-outline"
+      }
     }
   }
 }

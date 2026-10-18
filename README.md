@@ -30,6 +30,15 @@ Custom Home Assistant integration for Whirlpool washers using the reverse-engine
 | Clean washer reminder | Clean washer cycle needed |
 | Control lock | HMI control panel locked |
 
+### Buttons
+| Entity | Available when | Description |
+|--------|----------------|-------------|
+| Pause cycle | Running | Pauses the cycle (stops filling, keeps water in the drum) |
+| Resume cycle | Paused | Resumes a paused cycle |
+| Cancel cycle | Running, paused or delayed | Cancels the cycle (the washer drains) |
+
+Commands use the same payload as the Android app: `{"addressee": "washer", "command": "pause" | "resume" | "cancel", "sessionId": <washer.sessionId>}`. A press raises an error if the washer rejects the command or doesn't answer within 15 seconds.
+
 ## Installation
 
 ### HACS (Recommended)
