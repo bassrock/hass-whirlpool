@@ -34,7 +34,7 @@ Custom Home Assistant integration for Whirlpool washers using the reverse-engine
 | Entity | Available when | Description |
 |--------|----------------|-------------|
 | Pause cycle | Running | Pauses the cycle (stops filling, keeps water in the drum) |
-| Resume cycle | Paused | Resumes a paused cycle |
+| Resume cycle | Paused | Resumes a paused cycle. The washer rejects this (`L000`) unless Remote Enable is on at the panel |
 | Cancel cycle | Running, paused or delayed | Cancels the cycle (the washer drains) |
 
 Commands use the same payload as the Android app: `{"addressee": "washer", "command": "pause" | "resume" | "cancel", "sessionId": <washer.sessionId>}`. A press raises an error if the washer rejects the command or doesn't answer within 15 seconds.
