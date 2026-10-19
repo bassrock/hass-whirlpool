@@ -585,6 +585,18 @@ class WhirlpoolApiClient:
         _LOGGER.info("MQTT not connected, performing full reconnect")
         await self._async_open_mqtt(loop)
 
+    async def async_force_reconnect(
+        self, loop: asyncio.AbstractEventLoop
+    ) -> None:
+        """Re-fetch AWS credentials and open a brand-new MQTT client."""
+        self._identity_id, self._cognito_token = (
+            await self._auth.async_get_cognito_identity(self._access_token)
+        )
+        self._aws_creds = await self._auth.async_get_aws_credentials(
+            loop, self._identity_id, self._cognito_token
+        )
+        await self._async_open_mqtt(loop)
+
     async def _async_open_mqtt(self, loop: asyncio.AbstractEventLoop) -> None:
         """Tear down any existing MQTT client and open a fresh subscribed one."""
         if self._aws_creds is None:

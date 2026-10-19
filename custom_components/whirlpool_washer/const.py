@@ -23,6 +23,9 @@ MQTT_KEEPALIVE = 30
 CONNECTION_TIMEOUT = 15.0
 COMMAND_RESPONSE_TIMEOUT = 15.0
 CREDENTIAL_REFRESH_BUFFER = 300  # Refresh AWS creds 5 min before expiry
+# No washer state for this long (3 missed heartbeats) = treat the link as dead:
+# go unavailable and rebuild MQTT with fresh credentials every heartbeat.
+STATE_STALE_AFTER = 3 * POLL_INTERVAL
 
 # Config entry keys
 CONF_SAID = "said"
