@@ -31,6 +31,7 @@ APPLIANCE_STATE_OPTIONS = [
     "complete",
     "standby",
     "pause",
+    "paused",
     "delayed",
     "programming",
     "fault",

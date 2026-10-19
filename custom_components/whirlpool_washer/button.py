@@ -20,7 +20,9 @@ class WhirlpoolButtonEntityDescription(ButtonEntityDescription):
     command: str
     # applianceState values the command applies to; the button is
     # unavailable otherwise. Sending pause to an idle washer is accepted
-    # and wakes it into "programming", so don't offer it there.
+    # and wakes it into "programming", so don't offer it there. A paused
+    # cycle reports "paused" (seen live); "pause" is kept in case older
+    # firmware uses it.
     valid_states: frozenset[str]
 
 
@@ -35,13 +37,13 @@ BUTTONS: tuple[WhirlpoolButtonEntityDescription, ...] = (
         key="resume_cycle",
         translation_key="resume_cycle",
         command="resume",
-        valid_states=frozenset({"pause"}),
+        valid_states=frozenset({"pause", "paused"}),
     ),
     WhirlpoolButtonEntityDescription(
         key="cancel_cycle",
         translation_key="cancel_cycle",
         command="cancel",
-        valid_states=frozenset({"running", "pause", "delayed"}),
+        valid_states=frozenset({"running", "pause", "paused", "delayed"}),
     ),
 )
 
